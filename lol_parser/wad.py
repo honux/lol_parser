@@ -23,18 +23,20 @@ class WadFileHeader(object):
         buff.seek(self.offset, io.SEEK_SET)
 
         decoder = None
-        is_zstd = False
         if self.compressed:
-            decoder = zlib.decompressobj(zlib.MAX_WBITS|16) # GZIP
+            magic = buff.peek(2)[:2]
+            if magic == b"\x1f\x8b": # GZIP Magic
+                decoder = zlib.decompressobj(zlib.MAX_WBITS|16)
+            elif magic == b"\x28\xb5": # ZSTD Magic
+                decoder = zstd.ZstdDecompressor().decompressobj()
+            else:
+                raise NotImplementedError("A decompressor for magic {} is not implemented.".format(magic))
 
         hasher = None
         expected_hash = ""
         if "sha256" in self.extra:
             hasher = hashlib.sha256()
             expected_hash = self.extra["sha256"]
-        elif "md5" in self.extra:
-            hasher = hashlib.md5()
-            expected_hash = self.extra["md5"]
 
         file_name = os.path.join(directory, self.hashed_file_name)
         with io.open(file_name, "wb") as out_file:
@@ -52,13 +54,7 @@ class WadFileHeader(object):
                     hasher.update(data)
 
                 if decoder:
-                    try:
-                        data = decoder.decompress(data)
-                    except zlib.error as err:
-                        # Zstd will waise zstd.ZstdError, so no need to recheck here
-                        dctx = zstd.ZstdDecompressor()
-                        decoder = dctx.decompressobj()
-                        data = decoder.decompress(data)
+                    data = decoder.decompress(data)
 
                 out_file.write(data)
 
@@ -71,7 +67,14 @@ class WadFileHeader(object):
         buff.seek(self.offset, io.SEEK_SET)
 
         if self.compressed:
-            return zlib.decompress(buff.read(self.compressed_file_size), zlib.MAX_WBITS|16)
+            data = buff.read(self.compressed_file_size)
+            magic = buff.peek(2)[:2]
+            if magic == b"\x1f\x8b": # GZIP Magic
+                return zlib.decompress(data, zlib.MAX_WBITS|16)
+            elif magic == b"\x28\xb5": # ZSTD Magic
+                return zstd.ZstdDecompressor().decompress(data)
+            else:
+                raise NotImplementedError("A decompressor for magic {} is not implemented.".format(magic))
 
         return buff.read(self.file_size)
 
