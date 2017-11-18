@@ -106,8 +106,7 @@ class PackageManifest(object):
         if not entries[0].startswith("PKG"):
             raise NotImplementedError("The format of the package manifest is unknown.")
 
-        for idx in range(len(entries)-1):
-            line = entries[idx+1]
+        for line in entries[1:]:
             if not line:
                 continue
 
