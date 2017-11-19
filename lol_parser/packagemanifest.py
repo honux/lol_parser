@@ -14,6 +14,7 @@ class PackageManifestFile(object):
         self.full_file_path = full_file_path
         self.path, self.real_name = os.path.split(self.full_file_path)
         self.name = self.real_name.replace(".compressed", "")
+        self.compressed = self.real_name.endswith(".compressed")
         self.offset = offset
         self.size = size
         self.ukn = ukn
@@ -26,7 +27,7 @@ class PackageManifestFile(object):
         r = _session.get(url, stream=True)
 
         decoder = None
-        if self.real_name.endswith(".compressed"):
+        if self.compressed:
             decoder = zlib.decompressobj(zlib.MAX_WBITS) # Zlib
 
         with open(out_file_path, 'wb') as out_file:
@@ -45,7 +46,7 @@ class PackageManifestFile(object):
         out_file_path = os.path.join(directory, self.name)
 
         decoder = None
-        if self.real_name.endswith(".compressed"):
+        if self.compressed:
             decoder = zlib.decompressobj(zlib.MAX_WBITS) # Zlib
 
         with io.open(out_file_path, "wb") as out_file:
