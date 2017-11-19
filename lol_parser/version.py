@@ -1,6 +1,8 @@
 
 class Version(object):
     def __init__(self, raw_string):
+        if not raw_string:
+            raw_string = ""
         tmp = raw_string.split(".")
         self.parts = [int(s) for s in tmp if s]
 
@@ -21,69 +23,22 @@ class Version(object):
         return "%s(%s)" % (self.__class__, str(self))
 
     def __lt__(self, other):
-        if not other:
-            return False
-
-        p1_size = len(self.parts)
-        p2_size = len(other.parts)
-
-        for idx in range(max(p1_size, p2_size)):
-            v1 = 0 if idx >= p1_size else self.parts[idx]
-            v2 = 0 if idx >= p2_size else other.parts[idx]
-
-            if v1 < v2:
-                return True
-
-        return False
+        return other and (self.parts < other.parts)
 
     def __le__(self, other):
-        if not other:
-            return False
-
-        p1_size = len(self.parts)
-        p2_size = len(other.parts)
-        max_size = max(p1_size, p2_size)
-        equal = True
-
-        for idx in range(max_size):
-            v1 = 0 if idx >= p1_size else self.parts[idx]
-            v2 = 0 if idx >= p2_size else other.parts[idx]
-
-            if v1 < v2:
-                return True
-
-            if v1 != v2:
-                equal = False
-
-        if equal:
-            return True
-
-        return False
+        return other and (self.parts <= other.parts)
 
     def __eq__(self, other):
-        if not other:
-            return False
-
-        p1_size = len(self.parts)
-        p2_size = len(other.parts)
-
-        for idx in range(max(p1_size, p2_size)):
-            v1 = 0 if idx >= p1_size else self.parts[idx]
-            v2 = 0 if idx >= p2_size else other.parts[idx]
-
-            if v1 != v2:
-                return False
-
-        return True
+        return other and (self.parts == other.parts)
 
     def __gt__(self, other):
-        return other and (other < self)
+        return other and (self.parts > other.parts)
 
     def __ge__(self, other):
-        return other and (other <= self)
+        return other and (self.parts >= other.parts)
 
     def __ne__(self, other):
-        return other and not (self == other)
+        return other and (self.parts != other.parts)
 
 
 '''

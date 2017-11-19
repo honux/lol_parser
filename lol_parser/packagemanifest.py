@@ -7,6 +7,7 @@ from collections import defaultdict
 
 _session = requests.Session()
 CHUNK_SIZE = 1024
+REQUESTS_TIMEOUT = 30
 
 class PackageManifestFile(object):
     # PS: Some claim that the "ukn" is type, but there is no doc on what it belongs to. Also, on almost all the cases it is 0, so it does not look like the file type.
@@ -24,7 +25,7 @@ class PackageManifestFile(object):
         out_file_path = os.path.join(out_dir or self.path, out_file or self.name)
         os.makedirs(out_dir or self.path, exist_ok=True)
 
-        r = _session.get(url, stream=True)
+        r = _session.get(url, stream=True, timeout=REQUESTS_TIMEOUT)
 
         decoder = None
         if self.compressed:

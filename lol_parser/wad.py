@@ -151,7 +151,7 @@ def _parse_wad_v1(buff):
     return file_headers
 
 def _parse_wad_v2(buff):
-    ECDSA_length, _ = struct.unpack("<B", buff.read(1))
+    ECDSA_length = struct.unpack("<B", buff.read(1))[0]
     ECDSA = struct.unpack("<{}b".format(ECDSA_length), buff.read(ECDSA_length))
     if (83-ECDSA_length) > 0: # Padding
         buff.read(83-ECDSA_length)
