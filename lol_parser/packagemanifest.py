@@ -18,9 +18,10 @@ class PackageManifestFile(object):
         self.size = size
         self.ukn = ukn
 
-    def download(self, base_url, directory):
+    def download(self, base_url, out_file=None, out_dir=None):
         url = urllib.parse.urljoin(base_url, self.full_file_path.lstrip("/"))
-        out_file_path = os.path.join(directory, self.name)
+        out_file_path = os.path.join(out_dir or self.path, out_file or self.name)
+        os.makedirs(out_dir or self.path, exist_ok=True)
 
         r = _session.get(url, stream=True)
 
@@ -30,16 +31,13 @@ class PackageManifestFile(object):
 
         with open(out_file_path, 'wb') as out_file:
             for chunk in r.iter_content(chunk_size=CHUNK_SIZE):
-                if chunk:
-                    if decoder:
-                        try:
-                            tmp = decoder.decompress(chunk)
-                            chunk = tmp
-                        except:
-                            print("Failed decompressing file {}.".format(self.full_file_path))
-                            decoder = None
-                            pass
-                    out_file.write(chunk)
+                if not chunk:
+                    continue
+
+                if decoder:
+                    chunk = decoder.decompress(chunk)
+
+                out_file.write(chunk)
         return out_file_path
 
     def extract(self, buff, directory):
@@ -66,35 +64,30 @@ class PackageManifestFile(object):
                 out_file.write(data)
         return out_file_path
 
+    def content(self, base_url=None, buff=None):
+        data = None
+        if base_url:
+            url = urllib.parse.urljoin(base_url, self.full_file_path.lstrip("/"))
+            data = _session.get(url).content
+        elif buff:
+            data = buff.read(self.compressed_file_size if self.compressed else self.file_size)
+        else:
+            raise AttributeError("You should provide base_url or buff at least.")
+
+        if self.compressed:
+            return zlib.decompress(data, zlib.MAX_WBITS)
+        return data
+
+
 class PackageManifest(object):
     def __init__(self, data):
         self.files = []
         self.files_by_containing_file = defaultdict(list)
         self._parse_manifest(data)
 
-    def download_file(self, base_url, file_name, target_dir, keep_original_path=False):
+    def download_all(self, base_url, out_dir=None):
         for f in self.files:
-            if file_name in f.full_file_path:
-                if keep_original_path:
-                    if f.path.startswith("/"):
-                        target_dir = os.path.join(target_dir, f.path[1:])
-                    else:
-                        target_dir = os.path.join(target_dir, f.path)
-                f.download(base_url, target_dir)
-                return True
-        return False
-
-    def download_all(self, base_url, keep_original_path=False):
-        target_dir = "out"
-        for f in self.files:
-            out_dir = target_dir
-            if keep_original_path:
-                if f.path.startswith("/"):
-                    out_dir = os.path.join(out_dir, f.path[1:])
-                else:
-                    out_dir = os.path.join(out_dir, f.path)
-            os.makedirs(out_dir, exist_ok=True)
-            f.download(base_url, out_dir)
+            f.download(base_url, out_dir=out_dir)
 
     def download_bin(self):
         # http://l3cdn.riotgames.com/releases/live/projects/league_client/releases/0.0.0.105/packages/files/BIN_0x00000000

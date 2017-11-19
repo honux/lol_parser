@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name = "lol_parser",
-    version = "1.0.17",
+    version = "1.0.18",
     author = "Adriano Martins",
     author_email = "atoahp@hotmail.com",
     description = ("Parsers for several different files formats of League of Legends"),
