@@ -6,9 +6,7 @@ import struct
 import zlib
 import xxhash
 import zstd # https://github.com/indygreg/python-zstandard
-from pprint import pprint
-
-CHUNK_SIZE = 1024
+import warnings
 
 class WadFileHeader(object):
     def __init__(self, hashed_file_name, offset, compressed_file_size, file_size, compressed, extra_args):
@@ -19,64 +17,50 @@ class WadFileHeader(object):
         self.compressed = compressed
         self.extra = extra_args
 
+
     def extract(self, directory, buff):
-        buff.seek(self.offset, io.SEEK_SET)
-
-        decoder = None
-        if self.compressed:
-            magic = buff.peek(2)[:2]
-            if magic == b"\x1f\x8b": # GZIP Magic
-                decoder = zlib.decompressobj(zlib.MAX_WBITS|16)
-            elif magic == b"\x28\xb5": # ZSTD Magic
-                decoder = zstd.ZstdDecompressor().decompressobj()
-            else:
-                raise NotImplementedError("A decompressor for magic {} is not implemented.".format(magic))
-
-        hasher = None
-        expected_hash = ""
-        if "sha256" in self.extra:
-            hasher = hashlib.sha256()
-            expected_hash = self.extra["sha256"]
+        if self.compressed == 2: # Redirection
+            return
 
         file_name = os.path.join(directory, self.hashed_file_name)
         with io.open(file_name, "wb") as out_file:
-            data_left = self.compressed_file_size if self.compressed else self.file_size
-            while True:
-                if data_left <= 0:
-                    break
+            out_file.write(self.data(buff))
 
-                data_size = min(CHUNK_SIZE, data_left)
-                data_left -= data_size
-                data = buff.read(data_size)
-
-                # Future note to self: Hash *before* decompressing
-                if hasher:
-                    hasher.update(data)
-
-                if decoder:
-                    data = decoder.decompress(data)
-
-                out_file.write(data)
-
-        if hasher:
-            calculed_hash = int.from_bytes(hasher.digest()[0:8], byteorder='little')
-            if expected_hash != calculed_hash:
-                print("WARNING: Expected hash '{}', calculed hash '{}'. \nDetails:\n{}".format(hex(expected_hash), hex(calculed_hash), pprint(vars(self))))
 
     def content(self, buff):
+        warnings.DeprecationWarning("This method (WadFileHeader.content()) will be removed on a near future. Please use WadFileHeader.data() instead.")
+        return self.data(buff)
+
+
+    def raw_data(self, buff):
         buff.seek(self.offset, io.SEEK_SET)
-
         if self.compressed:
-            data = buff.read(self.compressed_file_size)
-            magic = buff.peek(2)[:2]
-            if magic == b"\x1f\x8b": # GZIP Magic
-                return zlib.decompress(data, zlib.MAX_WBITS|16)
-            elif magic == b"\x28\xb5": # ZSTD Magic
-                return zstd.ZstdDecompressor().decompress(data)
-            else:
-                raise NotImplementedError("A decompressor for magic {} is not implemented.".format(magic))
-
+            return buff.read(self.compressed_file_size)
         return buff.read(self.file_size)
+
+
+    def data(self, buff):
+        data = self.raw_data(buff)
+        if self.compressed == 1:
+            return zlib.decompressobj(zlib.MAX_WBITS|16).decompress(data)
+        elif self.compressed == 3:
+            return zstd.ZstdDecompressor().decompressobj().decompress(data)
+        return data
+
+
+    def verify_hash(self, buff):
+        hasher = None
+        expected_hash = ""
+
+        if "sha256" in self.extra:
+            hasher = hashlib.sha256()
+            expected_hash = self.extra["sha256"]
+        else:
+            return True
+
+        hasher.update(self.raw_data(buff))
+        calculed_hash = int.from_bytes(hasher.digest()[0:8], byteorder='little')
+        return (expected_hash == calculed_hash)
 
 
 class WadFile(object):
@@ -85,6 +69,7 @@ class WadFile(object):
         self.file_headers = {}
         self.version = 0
         self._load_headers()
+
 
     def extract_file(self, hashed_file_name, directory):
         os.makedirs(directory, exist_ok=True)
@@ -95,11 +80,13 @@ class WadFile(object):
             with io.open(self.path, "rb") as buff:
                 self.file_headers[hashed_file_name].extract(directory, buff)
 
+
     def extract_all(self, directory):
         os.makedirs(directory, exist_ok=True)
         with io.open(self.path, "rb") as buff:
             for file_header in self.file_headers.values():
                 file_header.extract(directory, buff)
+
 
     def _load_headers(self):
         # https://docs.python.org/3/library/struct.html#format-characters
@@ -119,6 +106,7 @@ class WadFile(object):
 
             self.version = version_major
 
+
     @staticmethod
     def hash(string, directory=None):
         hashed_name = xxhash.xxh64(string.lower(), seed=0).hexdigest()
@@ -127,6 +115,7 @@ class WadFile(object):
         if directory:
             return os.path.join(directory, hashed_name)
         return hashed_name
+
 
 def _parse_wad_v1(buff):
     entry_header_offset, entry_header_cell_size, files_count = struct.unpack("<HHI", buff.read(8))
@@ -149,6 +138,7 @@ def _parse_wad_v1(buff):
         )
 
     return file_headers
+
 
 def _parse_wad_v2(buff):
     ECDSA_length = struct.unpack("<B", buff.read(1))[0]
@@ -182,6 +172,7 @@ def _parse_wad_v2(buff):
 
     return file_headers
 
+
 def _parse_wad_v3(buff):
     ECDSA = struct.unpack("<256b", buff.read(256))
 
@@ -210,6 +201,7 @@ def _parse_wad_v3(buff):
         )
 
     return file_headers
+
 
 def ensure_16_digits(string):
     if len(string) < 16:

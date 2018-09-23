@@ -1,10 +1,8 @@
 
 class Version(object):
     def __init__(self, raw_string):
-        if not raw_string:
-            raw_string = ""
-        tmp = raw_string.split(".")
-        self.parts = [int(s) for s in tmp if s]
+        self.raw = raw_string
+        self.parts = tuple(int(x) for x in self.raw.split("."))
 
     def format(self, parts_count):
         p_size = len(self.parts)
@@ -17,10 +15,10 @@ class Version(object):
         return self
 
     def __str__(self):
-        return ".".join(str(x) for x in self.parts)
+        return self.raw
 
     def __repr__(self):
-        return "%s(%s)" % (self.__class__, str(self))
+        return "{}({!r})".format(self.__class__, self.raw)
 
     def __lt__(self, other):
         return other and (self.parts < other.parts)
@@ -29,7 +27,15 @@ class Version(object):
         return other and (self.parts <= other.parts)
 
     def __eq__(self, other):
-        return other and (self.parts == other.parts)
+        if isinstance(other, Version):
+            return self.raw == other.raw
+        elif isinstance(other, str):
+            return self.raw == other
+        elif isinstance(other, tuple) or isinstance(other, list):
+            return self.parts == other
+        elif isinstance(other, int):
+            return self.parts == tuple(other,)
+        return False
 
     def __gt__(self, other):
         return other and (self.parts > other.parts)
