@@ -6,7 +6,7 @@ import struct
 import zlib
 import xxhash
 import zstd # https://github.com/indygreg/python-zstandard
-import warnings
+
 
 class WadFileHeader(object):
     def __init__(self, hashed_file_name, offset, compressed_file_size, file_size, compressed, extra_args):
@@ -28,7 +28,7 @@ class WadFileHeader(object):
 
 
     def content(self, buff):
-        warnings.DeprecationWarning("This method (WadFileHeader.content()) will be removed on a near future. Please use WadFileHeader.data() instead.")
+        raise DeprecationWarning("This method (WadFileHeader.content()) will be removed on a near future. Please use WadFileHeader.data() instead.")
         return self.data(buff)
 
 
@@ -61,6 +61,7 @@ class WadFileHeader(object):
         hasher.update(self.raw_data(buff))
         calculed_hash = int.from_bytes(hasher.digest()[0:8], byteorder='little')
         return (expected_hash == calculed_hash)
+
 
 
 class WadFile(object):
