@@ -4,8 +4,9 @@ import struct
 from enum import Enum
 import json
 
-with io.open(os.path.join(os.path.dirname(__file__), "binfile.hashes.json")) as hashes_file:
-    binfile_hashes = json.load(hashes_file)
+with io.open(os.path.join(os.path.dirname(__file__), "binfile.hashes.txt")) as hashes_file:
+    hashes = (l.strip().split(' ', 1) for l in hashes_file)
+    binfile_hashes = {str(int(h, 16)): s for h, s in hashes}
 
 
 class BinFileFieldHashType(Enum):
@@ -64,7 +65,7 @@ class BinFile(object):
             if magic != b"PROP":
                 raise NotImplementedError("A parser for Bin with magic '{}' is not implemented.".format(magic))
 
-            version, = self._read("<I")
+            version = self._read("<I")[0]
 
             if version not in [1, 2]:
                 raise NotImplementedError("A parser for Bin version {} is not implemented.".format(version))
@@ -76,31 +77,26 @@ class BinFile(object):
         
 
     def _parse_associated_files(self):
-        strings_count, = self._read("<I")
+        strings_count = self._read("<I")[0]
         for _ in range(strings_count):
             string = self._parseField(BinFileFieldHashType.STRING)
             self.associated_files.append(string)
 
 
     def _parse_v1(self):
-        entries_count, = self._read("<I")
+        entries_count = self._read("<I")[0]
         entries_types = []
         
         for _ in range(entries_count):
-            entry_type, = self._read("<I")
+            entry_type = self._read("<I")[0]
             entries_types.append(entry_type)
         
         for entry_type in entries_types:
-            entry_length, entry_hash, entry_fields_count = self._read("<IIH")
-
-            entry_fields = {}
-            for _ in range(entry_fields_count):
-                field_hash, field_type = self._parseFieldHeader()
-                entry_fields[field_hash] = self._parseField(field_type)
-            
+            strct = self._parseField(BinFileFieldHashType.STRUCT)
+            strct["_hash"], strct["_data_size"] = strct["_data_size"], strct["_hash"]
             if entry_type not in self.entries:
                 self.entries[entry_type] = []
-            self.entries[entry_type].append(entry_fields)
+            self.entries[entry_type].append(strct)
     
 
     def _parseFieldHeader(self):
@@ -165,7 +161,8 @@ class BinFile(object):
             return self._buffer.read(string_length).decode('utf-8')
 
         elif field_type == BinFileFieldHashType.HASH:
-            return self._read("<I")[0]
+            hashed_val = str(self._read("<I")[0])
+            return binfile_hashes.get(hashed_val, hashed_val)
 
         elif field_type == BinFileFieldHashType.FIELD_LIST:
             container_field_type, unknown, container_size = self._read("<BII")
@@ -174,17 +171,30 @@ class BinFile(object):
                 lst.append(self._parseField(container_field_type))
             return lst
 
-        elif field_type == BinFileFieldHashType.STRUCT or field_type == BinFileFieldHashType.EMBEDDED:
+        elif field_type == BinFileFieldHashType.STRUCT:
             struct_hash = self._read("<I")[0]
-            if struct_hash == 0:
-                return
-            strct = {}
-            unknown, struct_entries_count = self._read("<IH")
+            data_size, struct_entries_count = self._read("<IH")
+            strct = {"_hash": struct_hash, "_data_size": data_size, "_type": 0}
+
             for _ in range(struct_entries_count):
                 key, entry_type = self._parseFieldHeader()
+                if key in strct:
+                    print("WARNING: Replacing key {} in the struct field.".format(key))
                 strct[key] = self._parseField(entry_type)
-            return {struct_hash: strct}
+            return strct
+        
+        elif field_type == BinFileFieldHashType.EMBEDDED:
+            struct_hash = self._read("<I")[0]
+            data_size, entries_count = self._read("<IH")
+            strct = {"_hash": struct_hash, "_data_size": data_size, "_type": 1}
 
+            for _ in range(entries_count):
+                key, entry_type = self._parseFieldHeader()
+                if key in strct:
+                    print("WARNING: Replacing key {} in the embedded field.".format(key))
+                strct[key] = self._parseField(entry_type)
+            return strct
+        
         elif field_type == BinFileFieldHashType.HASH_LINK:
             return self._read("<L")[0]
 
@@ -201,6 +211,8 @@ class BinFile(object):
             for _ in range(map_size):
                 key = self._parseField(key_type)
                 value = self._parseField(value_type)
+                if key in strct:
+                    print("WARNING: Replacing key {} in the map.".format(key))
                 strct[key] = value
             return strct
 
@@ -210,21 +222,28 @@ class BinFile(object):
         else:
             raise NotImplementedError("A parser for a BinFileField with type '{}' is not implemented.".format(field_type))
 
-
-    def translateKnownHashes(self):
+    
+    # Translate all known "keys hashes" to strings, returns the hash when unknown
+    def translate(self):
         return BinFile._translateEntry(self.entries)
 
 
     @staticmethod
     def _translateEntry(entry):
-        s = {}
-        for k, v in entry.items():
-            new_key = binfile_hashes.get(str(k), k)
-            if isinstance(v, dict):
-                s[new_key] = BinFile._translateEntry(v)
-            else:
-                s[new_key] = v
-        return s
+        if isinstance(entry, dict):
+            tmp = {}
+            for k, v in entry.items():
+                new_key = binfile_hashes.get(str(k), k)
+                tmp[new_key] = BinFile._translateEntry(v)
+            return tmp
+        elif isinstance(entry, list):
+            tmp = []
+            for v in entry:
+                tmp.append(BinFile._translateEntry(v))
+            return tmp
+        else:
+            return entry
+
 
     @staticmethod
     def hash(s):
